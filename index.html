@@ -23,6 +23,7 @@ select,#txt,#key{background:var(--card);color:var(--text);border:1px solid var(-
 .who{font-size:12px;font-weight:600}.s0 .who{color:var(--a)}.s1 .who{color:var(--b)}.s2 .who{color:var(--c)}.lang{font-weight:400;color:var(--sub);margin-left:6px}
 .o,.tr{overflow-wrap:anywhere}.tr{margin-top:5px;padding-top:5px;border-top:1px dashed var(--line);font-weight:600}.wait{color:var(--sub);font-weight:400}
 .live{opacity:.65;font-style:italic}
+.sp{margin-left:8px;border:1px solid var(--line);background:var(--card);border-radius:999px;padding:0 8px;font-size:14px;line-height:26px}
 footer{border-top:1px solid var(--line);padding:10px 14px calc(10px + env(safe-area-inset-bottom,0));display:flex;flex-direction:column;gap:8px}
 .row{display:flex;gap:8px;align-items:center}
 .spk{flex:1;padding:10px 0;border-radius:10px;border:2px solid var(--line);background:var(--card);color:var(--text);font-weight:600}
@@ -68,6 +69,23 @@ $("gear").onclick=()=>{const p=$("panel");p.style.display=p.style.display==="blo
 $("key").value=store.get("ck");$("key").onchange=()=>store.set("ck",$("key").value.trim());
 $("speak").onchange=()=>{if(window.speechSynthesis&&$("speak").checked)speechSynthesis.speak(new SpeechSynthesisUtterance(" "))};
 
+let audio=null;
+function speak(text,lang){
+  try{window.speechSynthesis&&speechSynthesis.cancel()}catch(e){}
+  if(audio){audio.pause();audio=null}
+  const code=lang.split("-")[0];
+  const vs=window.speechSynthesis?speechSynthesis.getVoices():[];
+  if(vs.some(v=>v.lang.toLowerCase().replace("_","-").startsWith(code))){const u=new SpeechSynthesisUtterance(text);u.lang=lang;speechSynthesis.speak(u);return}
+  // 手机没有这个语言的语音时，改用在线语音（不用下载）
+  const parts=text.match(/[^。！？.!?\n]+[。！？.!?]*/g)||[text];
+  const chunks=[];let c="";parts.forEach(p=>{if((c+p).length>180){if(c)chunks.push(c);c=p}else c+=p});if(c)chunks.push(c);
+  let i=0;
+  const next=()=>{if(i>=chunks.length)return;
+    audio=new Audio("https://translate.google.com/translate_tts?ie=UTF-8&client=tw-ob&tl="+(lang==="zh-CN"?"zh-CN":code)+"&q="+encodeURIComponent(chunks[i++]));
+    audio.onended=next;audio.onerror=()=>setSt("朗读失败：这个语言暂时没有可用的语音");
+    audio.play().catch(()=>setSt("请再点一次 🔊 朗读"))};
+  next();
+}
 async function doTranslate(text,to){
   const key=store.get("ck");
   if(key){
@@ -97,7 +115,8 @@ async function translate(spk,text){
     const r=await doTranslate(text,to);
     t.textContent=r.t;t.classList.remove("wait");
     if(r.langs){const s=document.createElement("span");s.className="lang";s.textContent="· "+r.langs;d.querySelector(".who").appendChild(s)}
-    if($("speak").checked&&window.speechSynthesis){const u=new SpeechSynthesisUtterance(r.t);u.lang=to;speechSynthesis.speak(u)}
+    const bt=document.createElement("button");bt.className="sp";bt.textContent="🔊";bt.setAttribute("aria-label","朗读");bt.onclick=()=>speak(r.t,to);t.appendChild(bt);
+    if($("speak").checked)speak(r.t,to);
   }catch(e){t.textContent="翻译失败："+e.message}
   $("log").scrollTop=$("log").scrollHeight;
 }
