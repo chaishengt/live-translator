@@ -32,6 +32,7 @@ footer{border-top:1px solid var(--line);padding:10px 14px calc(10px + env(safe-a
 .cfg{font-size:13px;color:var(--sub);flex-wrap:wrap}#who{font-weight:600;color:var(--text)}
 #mic{width:48px;height:48px;border-radius:50%;border:0;background:var(--text);color:var(--bg);font-size:20px;flex:none}
 #mic.rec{background:#d92d20;color:#fff}
+#send{padding:10px 14px;border-radius:10px;border:0;background:var(--text);color:var(--bg);font-size:15px;flex:none}
 #txt{flex:1;min-width:0;font-size:16px;padding:10px 12px}
 #st{font-size:12px;color:var(--sub);min-height:16px}
 </style>
@@ -45,8 +46,9 @@ footer{border-top:1px solid var(--line);padding:10px 14px calc(10px + env(safe-a
   <div id="st"></div>
   <div class="row" id="spks"></div>
   <div class="row cfg"><span id="who"></span><select id="say"></select><span>→ 译成</span><select id="to"></select>
-    <label><input type="checkbox" id="speak"> 🔊朗读</label></div>
-  <div class="row"><button id="mic" aria-label="麦克风">🎤</button><input id="txt" placeholder="也可打字，或用键盘上的 🎤" autocomplete="off"></div>
+    <label><input type="checkbox" id="speak"> 🔊朗读</label>
+    <label><input type="checkbox" id="auto"> 停顿自动译</label></div>
+  <div class="row"><button id="mic" aria-label="麦克风">🎤</button><input id="txt" placeholder="打字后按发送，或用键盘上的 🎤" autocomplete="off"><button id="send">翻译</button></div>
 </footer>
 <script>
 const $=id=>document.getElementById(id);
@@ -129,8 +131,10 @@ function showLive(text){
 // typing / keyboard dictation: translate after a pause
 let tm=null;
 function sendTyped(){const v=$("txt").value;$("txt").value="";translate(cur,v)}
-$("txt").addEventListener("input",e=>{clearTimeout(tm);if(e.isComposing)return;tm=setTimeout(()=>{if($("txt").value.trim())sendTyped()},1800)});
+$("txt").addEventListener("input",e=>{clearTimeout(tm);if(!$("auto").checked||e.isComposing)return;tm=setTimeout(()=>{if($("txt").value.trim())sendTyped()},1800)});
 $("txt").addEventListener("keydown",e=>{if(e.key==="Enter"&&!e.isComposing){clearTimeout(tm);sendTyped()}});
+
+$("send").onclick=()=>{clearTimeout(tm);sendTyped()};
 
 // microphone (browser speech recognition)
 const SRC=window.SpeechRecognition||window.webkitSpeechRecognition;
