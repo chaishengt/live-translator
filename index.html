@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>实时多语言翻译</title>
+<style>
+:root{--bg:#f6f5f2;--card:#fff;--text:#1f1f1f;--sub:#6b6b6b;--line:#e3e1dc;--a:#2f6fed;--b:#d9480f;--c:#2b8a3e;--abg:#e7efff;--bbg:#ffeee6;--cbg:#e6f5ea;color-scheme:light dark}
+@media (prefers-color-scheme:dark){:root{--bg:#171717;--card:#222;--text:#f0efec;--sub:#9a9a9a;--line:#333;--a:#7aa2ff;--b:#ff9b6b;--c:#6fd08a;--abg:#1d2a4a;--bbg:#4a2616;--cbg:#173823}}
+*{box-sizing:border-box}html,body{height:100%;margin:0}
+body{background:var(--bg);color:var(--text);font:16px/1.5 -apple-system,"PingFang SC","Noto Sans SC",sans-serif;display:flex;flex-direction:column;padding-top:env(safe-area-inset-top,0)}
+header{padding:10px 14px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:8px}
+h1{font-size:17px;margin:0;flex:1}
+button,select,input{font:inherit}
+select,#txt,#key{background:var(--card);color:var(--text);border:1px solid var(--line);border-radius:8px;padding:6px 8px;font-size:14px}
+#gear{background:none;border:0;font-size:20px;color:var(--text)}
+#panel{display:none;padding:10px 14px;border-bottom:1px solid var(--line);font-size:13px;color:var(--sub)}
+#key{width:100%;margin-top:6px}
+#log{flex:1;overflow-y:auto;padding:14px;display:flex;flex-direction:column;gap:10px}
+.empty{color:var(--sub);text-align:center;margin:auto;padding:20px;font-size:14px}
+.msg{max-width:86%;padding:9px 12px;border-radius:14px;border:1px solid var(--line);background:var(--card)}
+.s0{align-self:flex-start;background:var(--abg);border-color:transparent}.s1{align-self:flex-end;background:var(--bbg);border-color:transparent}.s2{align-self:center;background:var(--cbg);border-color:transparent}
+.who{font-size:12px;font-weight:600}.s0 .who{color:var(--a)}.s1 .who{color:var(--b)}.s2 .who{color:var(--c)}.lang{font-weight:400;color:var(--sub);margin-left:6px}
+.o,.tr{overflow-wrap:anywhere}.tr{margin-top:5px;padding-top:5px;border-top:1px dashed var(--line);font-weight:600}.wait{color:var(--sub);font-weight:400}
+.live{opacity:.65;font-style:italic}
+footer{border-top:1px solid var(--line);padding:10px 14px calc(10px + env(safe-area-inset-bottom,0));display:flex;flex-direction:column;gap:8px}
+.row{display:flex;gap:8px;align-items:center}
+.spk{flex:1;padding:10px 0;border-radius:10px;border:2px solid var(--line);background:var(--card);color:var(--text);font-weight:600}
+.spk.on.s0{border-color:var(--a);background:var(--abg)}.spk.on.s1{border-color:var(--b);background:var(--bbg)}.spk.on.s2{border-color:var(--c);background:var(--cbg)}
+.spk.s0,.spk.s1,.spk.s2{align-self:auto;max-width:none}
+.cfg{font-size:13px;color:var(--sub);flex-wrap:wrap}#who{font-weight:600;color:var(--text)}
+#mic{width:48px;height:48px;border-radius:50%;border:0;background:var(--text);color:var(--bg);font-size:20px;flex:none}
+#mic.rec{background:#d92d20;color:#fff}
+#txt{flex:1;min-width:0;font-size:16px;padding:10px 12px}
+#st{font-size:12px;color:var(--sub);min-height:16px}
+</style>
+</head>
+<body>
+<header><h1>实时多语言翻译</h1><button id="gear" aria-label="设置">⚙️</button></header>
+<div id="panel">默认免密钥翻译。想让混合语言的句子翻得更好，可填入 Anthropic API 密钥（只保存在这台手机上）：
+<input id="key" type="password" placeholder="sk-ant-…" autocomplete="off"></div>
+<div id="log"><div class="empty" id="empty">先点 A / B / C，设好这个人说的语言和要译成的语言。<br>换人说话时点一下对应按钮，再按 🎤。</div></div>
+<footer>
+  <div id="st"></div>
+  <div class="row" id="spks"></div>
+  <div class="row cfg"><span id="who"></span><select id="say"></select><span>→ 译成</span><select id="to"></select>
+    <label><input type="checkbox" id="speak"> 🔊朗读</label></div>
+  <div class="row"><button id="mic" aria-label="麦克风">🎤</button><input id="txt" placeholder="也可打字，或用键盘上的 🎤" autocomplete="off"></div>
+</footer>
+<script>
+const $=id=>document.getElementById(id);
+const LANGS=[["zh-CN","中文"],["en-US","English"],["vi-VN","Tiếng Việt"],["ja-JP","日本語"],["ko-KR","한국어"],["es-ES","Español"],["fr-FR","Français"],["de-DE","Deutsch"]];
+const NAMES=["说话人 A","说话人 B","说话人 C"];
+const cfg=[{say:"zh-CN",to:"vi-VN"},{say:"vi-VN",to:"zh-CN"},{say:"en-US",to:"zh-CN"}];
+const lname=c=>(LANGS.find(l=>l[0]===c)||[c,c])[1];
+let cur=0,sr=null,srOn=false,live=null,liveSpk=0;
+const store={get:k=>{try{return localStorage.getItem(k)||""}catch(e){return""}},set:(k,v)=>{try{localStorage.setItem(k,v)}catch(e){}}};
+const setSt=t=>$("st").textContent=t||"";
+
+LANGS.forEach(l=>["say","to"].forEach(id=>{const o=document.createElement("option");o.value=l[0];o.textContent=l[1];$(id).appendChild(o)}));
+function showCfg(){$("who").textContent=NAMES[cur]+" 说";$("say").value=cfg[cur].say;$("to").value=cfg[cur].to}
+function applyLang(){if(sr&&srOn){sr.lang=cfg[cur].say;sr.stop()}}
+$("say").onchange=()=>{cfg[cur].say=$("say").value;applyLang()};
+$("to").onchange=()=>{cfg[cur].to=$("to").value};
+NAMES.forEach((n,i)=>{const b=document.createElement("button");b.className="spk s"+i+(i?"":" on");b.textContent=n.slice(-1);
+  b.onclick=()=>{cur=i;[...$("spks").children].forEach((x,j)=>x.classList.toggle("on",j===i));showCfg();applyLang()};$("spks").appendChild(b)});
+$("gear").onclick=()=>{const p=$("panel");p.style.display=p.style.display==="block"?"none":"block"};
+$("key").value=store.get("ck");$("key").onchange=()=>store.set("ck",$("key").value.trim());
+$("speak").onchange=()=>{if(window.speechSynthesis&&$("speak").checked)speechSynthesis.speak(new SpeechSynthesisUtterance(" "))};
+
+async function doTranslate(text,to){
+  const key=store.get("ck");
+  if(key){
+    const r=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"content-type":"application/json","x-api-key":key,"anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},
+      body:JSON.stringify({model:"claude-haiku-5-5",max_tokens:1000,messages:[{role:"user",content:`你是翻译引擎。下面文本可能一句话里混用多种语言。侦测出现的所有语言，并把整段翻译成「${lname(to)}」。只输出 JSON：{"langs":["语言名称（中文）"],"translation":"译文"}\n\n文本：\n${text}`}]})});
+    const j=await r.json();if(!r.ok)throw new Error(j.error&&j.error.message||r.status);
+    const raw=j.content.map(c=>c.text||"").join("").replace(/```json|```/g,"").trim();
+    const o=JSON.parse(raw);return{t:o.translation,langs:(o.langs||[]).join(" + ")};
+  }
+  const tl=to==="zh-CN"?"zh-CN":to.split("-")[0];
+  const r=await fetch("https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl="+tl+"&dt=t&q="+encodeURIComponent(text));
+  const d=await r.json();
+  return{t:d[0].map(x=>x[0]).join(""),langs:d[2]||""};
+}
+
+function addMsg(spk,text){
+  $("empty")&&$("empty").remove();
+  const d=document.createElement("div");d.className="msg s"+spk;
+  d.innerHTML='<div class="who"></div><div class="o"></div><div class="tr wait">翻译中…</div>';
+  d.querySelector(".who").textContent=NAMES[spk];d.querySelector(".o").textContent=text;
+  $("log").appendChild(d);$("log").scrollTop=$("log").scrollHeight;return d;
+}
+async function translate(spk,text){
+  text=text.trim();if(!text)return;
+  const d=addMsg(spk,text),t=d.querySelector(".tr"),to=cfg[spk].to;
+  try{
+    const r=await doTranslate(text,to);
+    t.textContent=r.t;t.classList.remove("wait");
+    if(r.langs){const s=document.createElement("span");s.className="lang";s.textContent="· "+r.langs;d.querySelector(".who").appendChild(s)}
+    if($("speak").checked&&window.speechSynthesis){const u=new SpeechSynthesisUtterance(r.t);u.lang=to;speechSynthesis.speak(u)}
+  }catch(e){t.textContent="翻译失败："+e.message}
+  $("log").scrollTop=$("log").scrollHeight;
+}
+function showLive(text){
+  if(!text){live&&live.remove();live=null;return}
+  if(!live){$("empty")&&$("empty").remove();liveSpk=cur;live=document.createElement("div");live.className="msg live s"+liveSpk;$("log").appendChild(live)}
+  live.textContent=text;$("log").scrollTop=$("log").scrollHeight;
+}
+
+// typing / keyboard dictation: translate after a pause
+let tm=null;
+function sendTyped(){const v=$("txt").value;$("txt").value="";translate(cur,v)}
+$("txt").addEventListener("input",e=>{clearTimeout(tm);if(e.isComposing)return;tm=setTimeout(()=>{if($("txt").value.trim())sendTyped()},1800)});
+$("txt").addEventListener("keydown",e=>{if(e.key==="Enter"&&!e.isComposing){clearTimeout(tm);sendTyped()}});
+
+// microphone (browser speech recognition)
+const SRC=window.SpeechRecognition||window.webkitSpeechRecognition;
+if(!SRC){$("mic").style.opacity=".4";setSt("此浏览器没有语音识别，请用 Chrome（安卓）或 Safari（iPhone），或用键盘上的 🎤。")}
+$("mic").onclick=()=>{
+  if(!SRC){setSt("此浏览器没有语音识别，请用键盘上的 🎤。");return}
+  if(srOn){srOn=false;sr&&sr.stop();return}
+  sr=new SRC();sr.lang=cfg[cur].say;sr.continuous=true;sr.interimResults=true;
+  sr.onstart=()=>{$("mic").classList.add("rec");setSt("正在聆听（"+lname(sr.lang)+"）…")};
+  sr.onresult=e=>{let interim="";
+    for(let i=e.resultIndex;i<e.results.length;i++){const r=e.results[i];
+      if(r.isFinal){const spk=live?liveSpk:cur;showLive("");translate(spk,r[0].transcript)}else interim+=r[0].transcript}
+    showLive(interim)};
+  sr.onerror=e=>{if(e.error==="not-allowed"||e.error==="service-not-allowed"){srOn=false;setSt("麦克风被拒绝：请在浏览器设置里允许此网站使用麦克风。")}};
+  sr.onend=()=>{if(srOn){try{sr.start()}catch(e){}}else{$("mic").classList.remove("rec");showLive("");if(!$("st").textContent.startsWith("麦克风"))setSt("")}};
+  srOn=true;sr.start();
+};
+showCfg();
+</script>
+</body>
+</html>
